@@ -18,7 +18,7 @@ A script to monitor Polymarket markets and send alerts via Signal when certain c
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/polymarket-monitor.git
+   git clone https://github.com/mariodian/polymarket-monitor.git
    cd polymarket-monitor
    ```
 2. Ensure you have `curl`, `jq`, and Signal CLI installed on your system.
