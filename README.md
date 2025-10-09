@@ -32,6 +32,14 @@ Run the script with the required parameters:
 ./alert.sh --slug <market-slug> --signal-sender <signal-sender-number> --signal-recipient <signal-recipient-number>
 ```
 
+### Automated Setup
+
+You can set up a cron job to run the script at regular intervals. For example, to run the script every hour, add the following line to your crontab (edit with `crontab -e`):
+
+```bash
+0 * * * * /path/to/polymarket-monitor/alert.sh --slug <market-slug> --signal-sender <signal-sender-number> --signal-recipient <signal-recipient-number> >> /path/to/polymarket-monitor/alert.log 2>&1
+```
+
 ### Parameters
 
 - `--slug`: The slug of the Polymarket market to monitor (e.g., `will-polymarket-us-go-live-in-2025`).
