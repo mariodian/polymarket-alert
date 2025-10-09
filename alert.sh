@@ -154,7 +154,8 @@ echo "${emoji} ${message}"
 if (( $(echo "$implied_percent > $THRESHOLD" | bc -l) )); then
   require_cmd signal-cli
 
-  signal-cli -a "${SIGNAL_SENDER}" send -m "${question}\n${emoji} ${message}" "${SIGNAL_RECIPIENT}"
+  alert="${question}"$'\n'"${emoji} ${message}"
+  signal-cli -a "${SIGNAL_SENDER}" send -m "${alert}" "${SIGNAL_RECIPIENT}"
 fi
 
 exit 0
