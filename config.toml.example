@@ -1,0 +1,29 @@
+# polymarket-alert configuration
+#
+# Every key below is optional except signal_sender / signal_recipient, which
+# are required for alerts to be delivered.
+
+# --- Signal delivery --------------------------------------------------------
+signal_sender    = "+10000000000"   # number signal-cli is registered as
+signal_recipient = "+10000000001"   # who gets the message
+# signal_cli     = "signal-cli"     # binary name or absolute path
+
+# --- Defaults for every market below ---------------------------------------
+hysteresis   = 2                    # points below a threshold before it can fire again
+price_source = "mid"                # mid | ask | last
+# state_file = "~/.cache/polymarket-alert/state.json"
+# threshold  = 60                   # fallback when a market lists none
+
+# --- Markets ---------------------------------------------------------------
+# One line per market: `slug = [thresholds]`.
+[markets]
+will-china-invade-taiwan-before-2027 = [20, 50]
+will-the-us-invade-iran-before-2027  = [40, 70]
+
+# Per-market overrides use an inline table instead of a plain list:
+# will-fed-cut-rates-in-december = { thresholds = [25, 75], price_source = "ask", hysteresis = 3 }
+
+# The slug is the last path segment of the market URL:
+#   polymarket.com/market/will-the-us-invade-iran-before-2027
+# For a multi-outcome event URL (/event/...) use the slug of the individual
+# yes/no market inside the event.

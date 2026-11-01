@@ -1,62 +1,98 @@
 # polymarket-alert
 
-Watch Polymarket yes/no markets and get a Signal message when the implied
-probability crosses the thresholds you care about. Any number of markets, any
-number of thresholds per market.
+Watch Polymarket yes/no markets and get a Signal message when their implied
+probability crosses thresholds you set. Any number of markets, any number of
+thresholds per market, all defined in one TOML file.
 
-## Features
-
-- Monitor any market by slug — no code changes to add a new prediction.
-- Per-market threshold lists: `-t 40,70` fires at 40% and again at 70%.
-- Fires **once per upward crossing**, then goes quiet until the price drops
-  back below the threshold (minus a hysteresis margin) and crosses again.
-  Without this, a cron job above threshold would nag you every single run.
-- Graceful handling of illiquid markets (missing bid/ask), and a non-zero exit
-  code on API/parse failure so a broken check never looks like "no news".
-- Emoji severity scale identical to the original script (🟢🟡🟠🔴⚫).
+Watch twenty predictions without the command line growing a single flag.
 
 ## Requirements
 
-- Bash, `curl`, `jq`, `awk`
-- `signal-cli`, configured with a sender number
+- Python 3.11+ (stdlib only — `tomllib`, `urllib`, `subprocess`; no `jq`, `curl` or `bc`)
+- `signal-cli` for delivery
 
-## Usage
-
-```bash
-./alert.sh -w <slug>:<thresholds> [-w <slug>:<thresholds> ...] \
-           -ss <signal-sender> -sr <signal-recipient>
-```
-
-### Examples
-
-One market, notify at 40% and 70%:
+## Install
 
 ```bash
-./alert.sh -w will-the-us-invade-iran-before-2027:40,70 \
-           -ss +1234567890 -sr +0987654321
+git clone git@github.com:mariodian/polymarket-alert.git
+cd polymarket-alert
+mkdir -p ~/.config/polymarket-alert
+cp config.toml.example ~/.config/polymarket-alert/config.toml
+$EDITOR ~/.config/polymarket-alert/config.toml
 ```
 
-Several markets with different thresholds:
+`alert.py` looks for `~/.config/polymarket-alert/config.toml` (or
+`$XDG_CONFIG_HOME/...`) when `-c` is omitted, so from then on the whole command
+is just `alert.py`.
 
-```bash
-./alert.sh \
-  -s will-china-invade-taiwan-before-2027 -t 20,50 \
-  -s will-the-us-invade-iran-before-2027  -t 40,70 \
-  -ss +1234567890 -sr +0987654321
+## Config
+
+```toml
+# --- Signal delivery ---------------------------------------------------
+signal_sender    = "+421..."
+signal_recipient = "+886..."
+# signal_cli     = "signal-cli"      # name on PATH, or an absolute path
+
+# --- defaults for every market below -----------------------------------
+hysteresis   = 2                     # points below a threshold before it re-arms
+price_source = "mid"                 # mid | ask | last
+# state_file = "~/.cache/polymarket-alert/state.json"
+# thresholds = 60                    # fallback when a market lists none
+
+[markets]
+will-china-invade-taiwan-before-2027 = [20, 50]
+will-the-us-invade-iran-before-2027  = [40, 70]
 ```
 
-The `-s/-t` form and the `-w` form are equivalent and can be mixed. A `-t`
-applies to every slug declared before it that has no explicit threshold yet,
-and to every slug declared after it until the next `-t`.
+Adding a prediction is one line: `slug = [thresholds]`.
+
+Per-market overrides, when one market needs a different source or margin:
+
+```toml
+[markets]
+will-fed-cut-rates-in-december = { thresholds = [25, 75], price_source = "ask", hysteresis = 3 }
+```
+
+Unknown keys are rejected rather than ignored — a typo in `signal_reciepent` is
+otherwise a monitor that silently never alerts.
 
 ### Finding the slug
 
-Take it from the URL: `polymarket.com/market/will-the-us-invade-iran-before-2027`
-→ `will-the-us-invade-iran-before-2027`. For multi-outcome events, the URL
-points at the event (`/event/<event-slug>`); use the slug of the individual
-yes/no market inside it.
+It is the last segment of the market URL:
+`polymarket.com/market/will-the-us-invade-iran-before-2027` →
+`will-the-us-invade-iran-before-2027`. For a multi-outcome event
+(`/event/<event-slug>`) use the slug of the individual yes/no market inside it.
 
-### Alert format
+## Running
+
+```bash
+alert.py                      # uses the default config path
+alert.py -c /path/config.toml # explicit config
+alert.py --list               # show what would be watched, then exit
+alert.py -w will-the-us-invade-iran-before-2027:40,70 --dry-run   # ad-hoc, no config
+```
+
+CLI options override the config, which overrides environment variables, which
+override the built-in defaults. `--dry-run` prints the alert instead of sending
+it; `--list` resolves the config and prints the watch list.
+
+## Behaviour
+
+**Each threshold fires once per upward crossing.** The state file remembers
+which thresholds have fired, so a job running four times a day sends one
+message per event, not one per run. A threshold re-arms only after the price
+falls `hysteresis` points back below it, which stops flapping around 40.0%.
+
+**A failed send is retried.** The threshold is only marked fired once
+`signal-cli` reports success.
+
+**Exit code 1 on any fetch, parse, config or send failure**, so a broken check
+never looks like "no news". Per-market failures don't stop the other markets.
+
+**Price source.** `mid` = `(bestBid + bestAsk) / 2` (default, the honest
+probability), `ask` = what YES costs, `last` = last trade.
+
+Alert format:
 
 ```
 Will the U.S. invade Iran before 2027?
@@ -65,50 +101,32 @@ Will the U.S. invade Iran before 2027?
 https://polymarket.com/market/will-the-us-invade-iran-before-2027
 ```
 
-## Options
-
-| Flag | Meaning |
-|---|---|
-| `-s, --slug=SLUG` | Market slug, repeatable |
-| `-t, --threshold=LIST` | Comma separated percentages, e.g. `40,70` (default 60) |
-| `-w, --watch=SLUG:LIST` | Compact form of `-s` + `-t`, repeatable |
-| `-ss, --signal-sender` | Sender number for signal-cli |
-| `-sr, --signal-recipient` | Recipient number |
-| `--price-source=mid\|ask\|last` | Probability source. `mid` = `(bestBid+bestAsk)/2` (default), `ask` = what YES actually costs, `last` = last trade |
-| `--hysteresis=N` | Points below a threshold the price must fall before it can fire again (default 2) |
-| `--state-file=PATH` | Where fired thresholds are remembered (default `~/.cache/polymarket-alert/state.json`) |
-| `--no-state` | Ignore state and alert whenever the price is over a threshold |
-| `--dry-run` | Print the alert instead of sending it |
-| `-h, --help` | Usage |
-
-The same values can be set through the environment: `THRESHOLD`, `HYSTERESIS`,
-`PRICE_SOURCE`, `STATE_FILE`, `SIGNAL_SENDER`, `SIGNAL_RECIPIENT`,
-`POLYMARKET_API_ENDPOINT`.
-
 ## Cron
 
 ```
-12 */6 * * * $HOME/source/Scripts/polymarket-alert/alert.sh \
-  -w will-china-invade-taiwan-before-2027:20,50 \
-  -w will-the-us-invade-iran-before-2027:40,70 \
-  -ss +1234567890 -sr +0987654321 >/dev/null 2>&1
+12 */6 * * * PATH=/usr/local/bin:/usr/bin:/bin $HOME/source/Scripts/polymarket-alert/alert.py \
+  -c $HOME/.config/polymarket-alert/config.toml > $HOME/logs/polymarket-alert.log 2>&1
 ```
 
-Adding a market = adding one `-w slug:t1,t2` argument. Nothing else changes.
+`PATH` is set explicitly because cron's default (`/usr/bin:/bin`) usually does
+not include `/usr/local/bin`, where `signal-cli` tends to live. The log
+truncates each run, so the last run's output is always the current one.
 
-### Notes on state
+## Tests
 
-`~/.cache/polymarket-alert/state.json` records, per slug, which thresholds are
-currently "fired" and the price at the last run. If the send fails, the
-threshold is not marked fired, so it retries on the next run. Deleting the file
-resets everything and any market currently over its thresholds will alert once
-on the next run.
+```bash
+python3 tests/test_alert.py
+```
 
-## Exit codes
+Runs against a local mock of the Gamma API — no network, no `signal-cli`, no
+state outside a temp dir. Covers crossings, hysteresis re-arming, state-format
+compatibility, config/CLI precedence and the error paths.
 
-- `0` — checked successfully (whether or not anything fired)
-- `1` — bad arguments, no API response, unparseable market, or a failed send
+## Historically
+
+Was a bash script taking `-s slug -t threshold`. Still accepts that shape for a
+quick single check, but the config file is the intended interface.
 
 ## License
 
-This project is unlicensed and free to use as you see fit.
+Unlicensed, free to use as you see fit.
